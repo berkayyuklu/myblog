@@ -174,7 +174,7 @@
                     userId: currentUser.uid,
                     username: currentUser.username,
                     text: commentText[postId],
-                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    date: new Date().toISOString(),
                     isAdminFavorite: false
                 };
                 await db.collection('posts').doc(postId).update({ comments: [...comments, newComment] });
@@ -432,7 +432,6 @@
                                     <input type="password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} onKeyPress={(e) => e.key === 'Enter' && handleAuth()} placeholder="Şifre (min 6 karakter)" className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black" />
                                     <button onClick={handleAuth} className="w-full bg-black text-white py-3 rounded hover:bg-gray-800 transition-colors">{authMode === 'login' ? 'Giriş Yap' : 'Kayıt Ol'}</button>
                                     <button onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setAuthError(''); }} className="w-full text-gray-600 hover:text-black transition-colors">{authMode === 'login' ? 'Hesabın yok mu? Kayıt ol' : 'Zaten hesabın var mı? Giriş yap'}</button>
-                                    {authMode === 'login' && <p className="text-sm text-gray-500 text-center">Admin: admin@blog.com / 123456</p>}
                                 </div>
                             </div>
                         </div>
