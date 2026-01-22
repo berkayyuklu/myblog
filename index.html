@@ -75,6 +75,8 @@
             const [isDragging, setIsDragging] = useState(false);
             const [expandedPost, setExpandedPost] = useState(null);
             const [fullscreenImage, setFullscreenImage] = useState(null);
+            const [replyingTo, setReplyingTo] = useState(null);
+            const [replyText, setReplyText] = useState({});
 
             useEffect(() => {
                 const unsubscribe = auth.onAuthStateChanged((user) => {
@@ -166,7 +168,7 @@
             };
 
             const handleComment = async (postId) => {
-                if (!currentUser) { alert('Yorum yapmak için giriş yapmalısınız!'); return; }
+                if (!currentUser) { alert('Yorum yapmak için giriş yapmalısınz!'); return; }
                 if (!commentText[postId]?.trim()) return;
                 const post = posts.find(p => p.id === postId);
                 const comments = post.comments || [];
@@ -176,10 +178,37 @@
                     username: currentUser.username,
                     text: commentText[postId],
                     date: new Date().toISOString(),
-                    isAdminFavorite: false
+                    isAdminFavorite: false,
+                    replies: []
                 };
                 await db.collection('posts').doc(postId).update({ comments: [...comments, newComment] });
                 setCommentText({ ...commentText, [postId]: '' });
+            };
+
+            const handleReply = async (postId, commentId) => {
+                if (!currentUser) { alert('Yanıt vermek için giriş yapmalısınız!'); return; }
+                const replyKey = `${postId}-${commentId}`;
+                if (!replyText[replyKey]?.trim()) return;
+                const post = posts.find(p => p.id === postId);
+                const comments = post.comments.map(c => {
+                    if (c.id === commentId) {
+                        const replies = c.replies || [];
+                        return {
+                            ...c,
+                            replies: [...replies, {
+                                id: Date.now().toString(),
+                                userId: currentUser.uid,
+                                username: currentUser.username,
+                                text: replyText[replyKey],
+                                date: new Date().toISOString()
+                            }]
+                        };
+                    }
+                    return c;
+                });
+                await db.collection('posts').doc(postId).update({ comments });
+                setReplyText({ ...replyText, [replyKey]: '' });
+                setReplyingTo(null);
             };
 
             const toggleAdminFavorite = async (postId, commentId) => {
@@ -409,24 +438,61 @@
                                                     <h4 className="text-xl text-black mb-4">Yorumlar ({(post.comments || []).length})</h4>
                                                     <div className="space-y-3 mb-4 max-h-96 overflow-y-auto">
                                                         {(post.comments || []).map(comment => (
-                                                            <div key={comment.id} className="bg-gray-50 p-3 rounded">
-                                                                <div className="flex items-start justify-between mb-1">
-                                                                    <span className="font-bold text-black">{comment.username}</span>
-                                                                    <div className="flex items-center gap-2">
-                                                                        {currentUser?.isAdmin && (
-                                                                            <>
-                                                                                <button onClick={() => toggleAdminFavorite(post.id, comment.id)} className="hover:scale-110 transition-transform">
-                                                                                    <Icons.Heart filled={comment.isAdminFavorite} isGold={comment.isAdminFavorite} />
-                                                                                </button>
-                                                                                <button onClick={() => deleteComment(post.id, comment.id)} className="text-red-600 hover:text-red-800">
-                                                                                    <Icons.Trash2 />
-                                                                                </button>
-                                                                            </>
-                                                                        )}
-                                                                        {comment.isAdminFavorite && <span className="text-xs" style={{color: '#FFD700'}}>★ Admin Favorisi</span>}
+                                                            <div key={comment.id}>
+                                                                <div className="bg-gray-50 p-3 rounded">
+                                                                    <div className="flex items-start justify-between mb-1">
+                                                                        <span className="font-bold text-black">{comment.username}</span>
+                                                                        <div className="flex items-center gap-2">
+                                                                            {currentUser?.isAdmin && (
+                                                                                <>
+                                                                                    <button onClick={() => toggleAdminFavorite(post.id, comment.id)} className="hover:scale-110 transition-transform">
+                                                                                        <Icons.Heart filled={comment.isAdminFavorite} isGold={comment.isAdminFavorite} />
+                                                                                    </button>
+                                                                                    <button onClick={() => deleteComment(post.id, comment.id)} className="text-red-600 hover:text-red-800">
+                                                                                        <Icons.Trash2 />
+                                                                                    </button>
+                                                                                </>
+                                                                            )}
+                                                                            {comment.isAdminFavorite && <span className="text-xs" style={{color: '#FFD700'}}>★ Admin Favorisi</span>}
+                                                                        </div>
                                                                     </div>
+                                                                    <p className="text-gray-700 text-sm mb-2">{comment.text}</p>
+                                                                    {currentUser && (
+                                                                        <button 
+                                                                            onClick={() => setReplyingTo(replyingTo === comment.id ? null : comment.id)} 
+                                                                            className="text-xs text-blue-600 hover:text-blue-800"
+                                                                        >
+                                                                            💬 Yanıtla
+                                                                        </button>
+                                                                    )}
                                                                 </div>
-                                                                <p className="text-gray-700 text-sm">{comment.text}</p>
+                                                                
+                                                                {(comment.replies || []).length > 0 && (
+                                                                    <div className="ml-8 mt-2 space-y-2">
+                                                                        {comment.replies.map(reply => (
+                                                                            <div key={reply.id} className="bg-blue-50 p-2 rounded text-sm">
+                                                                                <span className="font-bold text-black">{reply.username}:</span>
+                                                                                <span className="text-gray-700 ml-2">{reply.text}</span>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+
+                                                                {replyingTo === comment.id && currentUser && (
+                                                                    <div className="ml-8 mt-2 flex gap-2">
+                                                                        <input 
+                                                                            type="text" 
+                                                                            value={replyText[`${post.id}-${comment.id}`] || ''} 
+                                                                            onChange={(e) => setReplyText({ ...replyText, [`${post.id}-${comment.id}`]: e.target.value })} 
+                                                                            onKeyPress={(e) => e.key === 'Enter' && handleReply(post.id, comment.id)} 
+                                                                            placeholder="Yanıt yaz..." 
+                                                                            className="flex-1 px-3 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" 
+                                                                            autoFocus
+                                                                        />
+                                                                        <button onClick={() => handleReply(post.id, comment.id)} className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 transition-colors text-sm">Gönder</button>
+                                                                        <button onClick={() => setReplyingTo(null)} className="bg-gray-200 text-gray-700 px-3 py-1 rounded hover:bg-gray-300 transition-colors text-sm">İptal</button>
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         ))}
                                                     </div>
