@@ -4,32 +4,40 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kişisel Blogum</title>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Shadows+Into+Light&display=swap" rel="stylesheet">
     <style>
-        body {
-            font-family: 'Shadows Into Light', cursive;
-        }
-        .slide-enter {
-            animation: slideIn 0.6s ease-out;
-        }
+        body { font-family: 'Shadows Into Light', cursive; }
+        .slide-enter { animation: slideIn 0.6s ease-out; }
         @keyframes slideIn {
-            from {
-                transform: perspective(1000px) rotateY(-15deg);
-                opacity: 0;
-            }
-            to {
-                transform: perspective(1000px) rotateY(0deg);
-                opacity: 1;
-            }
+            from { transform: perspective(1000px) rotateY(-15deg); opacity: 0; }
+            to { transform: perspective(1000px) rotateY(0deg); opacity: 1; }
         }
     </style>
 </head>
 <body>
     <div id="root"></div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyA00GtmuY4ECmTpznLLsv8ISwLMHM0IzDk",
+            authDomain: "my-blog-46998.firebaseapp.com",
+            projectId: "my-blog-46998",
+            storageBucket: "my-blog-46998.firebasestorage.app",
+            messagingSenderId: "990825896833",
+            appId: "1:990825896833:web:f1c00f485be70d8f7b2680",
+            measurementId: "G-TD66RHBC85"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+    </script>
 
     <script type="text/babel">
         const { useState, useEffect } = React;
@@ -56,13 +64,9 @@
             const [authMode, setAuthMode] = useState('login');
             const [authForm, setAuthForm] = useState({ username: '', password: '', email: '' });
             const [authError, setAuthError] = useState('');
-            const [users, setUsers] = useState([{ id: 1, username: 'admin', password: '1221', email: 'admin@blog.com', isAdmin: true }]);
             const [currentSlide, setCurrentSlide] = useState(0);
-            const [posts, setPosts] = useState([
-                { id: 1, title: 'Hoş Geldiniz', content: 'Minimalist ve şık tasarımıyla kişisel blogunuza hoş geldiniz.', image: 'https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=1200&h=600&fit=crop', date: '2026-01-22', likes: [], comments: [], views: 45, isFeatured: true, showInFeed: true },
-                { id: 2, title: 'Yaratıcılık', content: 'Her an yeni fikirler ve ilham.', image: 'https://images.unsplash.com/photo-1487088678257-3a541e6e3922?w=1200&h=600&fit=crop', date: '2026-01-21', likes: [], comments: [], views: 32, isFeatured: true, showInFeed: true },
-                { id: 3, title: 'Keşfet', content: 'Dünyayı keşfetmeye devam edin.', image: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1200&h=600&fit=crop', date: '2026-01-20', likes: [], comments: [], views: 28, isFeatured: false, showInFeed: true }
-            ]);
+            const [posts, setPosts] = useState([]);
+            const [loading, setLoading] = useState(true);
             const [showAddModal, setShowAddModal] = useState(false);
             const [editingPost, setEditingPost] = useState(null);
             const [newPost, setNewPost] = useState({ title: '', content: '', image: '', isFeatured: false, showInFeed: true });
@@ -70,6 +74,30 @@
             const [uploadMode, setUploadMode] = useState('url');
             const [isDragging, setIsDragging] = useState(false);
             const [expandedPost, setExpandedPost] = useState(null);
+
+            useEffect(() => {
+                const unsubscribe = auth.onAuthStateChanged((user) => {
+                    if (user) {
+                        db.collection('users').doc(user.uid).get().then((doc) => {
+                            if (doc.exists) {
+                                setCurrentUser({ ...doc.data(), uid: user.uid });
+                            }
+                        });
+                    } else {
+                        setCurrentUser(null);
+                    }
+                });
+                return () => unsubscribe();
+            }, []);
+
+            useEffect(() => {
+                const unsubscribe = db.collection('posts').orderBy('timestamp', 'desc').onSnapshot((snapshot) => {
+                    const postsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setPosts(postsData);
+                    setLoading(false);
+                });
+                return () => unsubscribe();
+            }, []);
 
             const featuredPosts = posts.filter(p => p.isFeatured);
 
@@ -82,31 +110,35 @@
                 }
             }, [featuredPosts.length]);
 
-            const handleAuth = () => {
+            const handleAuth = async () => {
                 setAuthError('');
-                if (authMode === 'login') {
-                    const user = users.find(u => u.username === authForm.username && u.password === authForm.password);
-                    if (user) {
-                        setCurrentUser(user);
+                try {
+                    if (authMode === 'login') {
+                        const userCredential = await auth.signInWithEmailAndPassword(authForm.email, authForm.password);
                         setShowAuthModal(false);
                         setAuthForm({ username: '', password: '', email: '' });
                     } else {
+                        const userCredential = await auth.createUserWithEmailAndPassword(authForm.email, authForm.password);
+                        const isAdmin = authForm.email === 'admin@blog.com';
+                        await db.collection('users').doc(userCredential.user.uid).set({
+                            username: authForm.username,
+                            email: authForm.email,
+                            isAdmin: isAdmin,
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                        setShowAuthModal(false);
+                        setAuthForm({ username: '', password: '', email: '' });
+                    }
+                } catch (error) {
+                    if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
                         setAuthError('Kullanıcı adı veya parola hatalı');
+                    } else if (error.code === 'auth/email-already-in-use') {
+                        setAuthError('Bu e-posta adresi zaten kullanılıyor');
+                    } else if (error.code === 'auth/weak-password') {
+                        setAuthError('Şifre en az 6 karakter olmalıdır');
+                    } else {
+                        setAuthError(error.message);
                     }
-                } else {
-                    if (!authForm.username || !authForm.password || !authForm.email) {
-                        setAuthError('Lütfen tüm alanları doldurun');
-                        return;
-                    }
-                    if (users.find(u => u.username === authForm.username)) {
-                        setAuthError('Bu kullanıcı adı zaten kullanılıyor');
-                        return;
-                    }
-                    const newUser = { id: Date.now(), username: authForm.username, password: authForm.password, email: authForm.email, isAdmin: false };
-                    setUsers([...users, newUser]);
-                    setCurrentUser(newUser);
-                    setShowAuthModal(false);
-                    setAuthForm({ username: '', password: '', email: '' });
                 }
             };
 
@@ -124,46 +156,42 @@
             const handleDragLeave = (e) => { e.preventDefault(); setIsDragging(false); };
             const handleDrop = (e) => { e.preventDefault(); setIsDragging(false); const file = e.dataTransfer.files[0]; handleFileUpload(file); };
 
-            const handleLike = (postId) => {
+            const handleLike = async (postId) => {
                 if (!currentUser) { alert('Beğenmek için giriş yapmalısınız!'); return; }
-                setPosts(posts.map(p => {
-                    if (p.id === postId) {
-                        const likes = p.likes.includes(currentUser.id) ? p.likes.filter(id => id !== currentUser.id) : [...p.likes, currentUser.id];
-                        return { ...p, likes };
-                    }
-                    return p;
-                }));
+                const post = posts.find(p => p.id === postId);
+                const likes = post.likes || [];
+                const newLikes = likes.includes(currentUser.uid) ? likes.filter(id => id !== currentUser.uid) : [...likes, currentUser.uid];
+                await db.collection('posts').doc(postId).update({ likes: newLikes });
             };
 
-            const handleComment = (postId) => {
+            const handleComment = async (postId) => {
                 if (!currentUser) { alert('Yorum yapmak için giriş yapmalısınız!'); return; }
                 if (!commentText[postId]?.trim()) return;
-                setPosts(posts.map(p => {
-                    if (p.id === postId) {
-                        return { ...p, comments: [...p.comments, { id: Date.now(), userId: currentUser.id, username: currentUser.username, text: commentText[postId], date: new Date().toISOString(), isAdminFavorite: false }] };
-                    }
-                    return p;
-                }));
+                const post = posts.find(p => p.id === postId);
+                const comments = post.comments || [];
+                const newComment = {
+                    id: Date.now().toString(),
+                    userId: currentUser.uid,
+                    username: currentUser.username,
+                    text: commentText[postId],
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    isAdminFavorite: false
+                };
+                await db.collection('posts').doc(postId).update({ comments: [...comments, newComment] });
                 setCommentText({ ...commentText, [postId]: '' });
             };
 
-            const toggleAdminFavorite = (postId, commentId) => {
-                setPosts(posts.map(p => {
-                    if (p.id === postId) {
-                        return { ...p, comments: p.comments.map(c => c.id === commentId ? { ...c, isAdminFavorite: !c.isAdminFavorite } : c) };
-                    }
-                    return p;
-                }));
+            const toggleAdminFavorite = async (postId, commentId) => {
+                const post = posts.find(p => p.id === postId);
+                const comments = post.comments.map(c => c.id === commentId ? { ...c, isAdminFavorite: !c.isAdminFavorite } : c);
+                await db.collection('posts').doc(postId).update({ comments });
             };
 
-            const deleteComment = (postId, commentId) => {
+            const deleteComment = async (postId, commentId) => {
                 if (confirm('Bu yorumu silmek istediğinizden emin misiniz?')) {
-                    setPosts(posts.map(p => {
-                        if (p.id === postId) {
-                            return { ...p, comments: p.comments.filter(c => c.id !== commentId) };
-                        }
-                        return p;
-                    }));
+                    const post = posts.find(p => p.id === postId);
+                    const comments = post.comments.filter(c => c.id !== commentId);
+                    await db.collection('posts').doc(postId).update({ comments });
                 }
             };
 
@@ -175,28 +203,35 @@
                 }
             };
 
-            const handleAddPost = () => {
+            const handleAddPost = async () => {
                 if (newPost.title && newPost.content) {
-                    const post = { id: Date.now(), ...newPost, date: new Date().toISOString().split('T')[0], likes: [], comments: [], views: 0 };
-                    setPosts([...posts, post]);
+                    await db.collection('posts').add({
+                        ...newPost,
+                        authorId: currentUser.uid,
+                        authorName: currentUser.username,
+                        likes: [],
+                        comments: [],
+                        views: 0,
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                    });
                     setNewPost({ title: '', content: '', image: '', isFeatured: false, showInFeed: true });
                     setShowAddModal(false);
                     setUploadMode('url');
                 }
             };
 
-            const handleUpdatePost = () => {
+            const handleUpdatePost = async () => {
                 if (editingPost && newPost.title && newPost.content) {
-                    setPosts(posts.map(p => p.id === editingPost.id ? { ...p, ...newPost } : p));
+                    await db.collection('posts').doc(editingPost.id).update(newPost);
                     setEditingPost(null);
                     setNewPost({ title: '', content: '', image: '', isFeatured: false, showInFeed: true });
                     setUploadMode('url');
                 }
             };
 
-            const handleDeletePost = (id) => {
+            const handleDeletePost = async (id) => {
                 if (confirm('Bu gönderiyi silmek istediğinizden emin misiniz?')) {
-                    setPosts(posts.filter(p => p.id !== id));
+                    await db.collection('posts').doc(id).delete();
                 }
             };
 
@@ -208,14 +243,19 @@
             const nextSlide = () => { setCurrentSlide((prev) => (prev + 1) % featuredPosts.length); };
             const prevSlide = () => { setCurrentSlide((prev) => (prev - 1 + featuredPosts.length) % featuredPosts.length); };
 
-            const toggleExpandPost = (postId) => {
+            const toggleExpandPost = async (postId) => {
                 if (expandedPost === postId) {
                     setExpandedPost(null);
                 } else {
                     setExpandedPost(postId);
-                    setPosts(posts.map(p => p.id === postId ? { ...p, views: p.views + 1 } : p));
+                    const post = posts.find(p => p.id === postId);
+                    await db.collection('posts').doc(postId).update({ views: (post.views || 0) + 1 });
                 }
             };
+
+            if (loading) {
+                return <div className="min-h-screen bg-white flex items-center justify-center"><div className="text-3xl text-black">Yükleniyor...</div></div>;
+            }
             return (
                 <div className="min-h-screen bg-white">
                     <header className="border-b border-gray-200 bg-white sticky top-0 z-40">
@@ -230,7 +270,7 @@
                                                 <Icons.Plus /> Yeni
                                             </button>
                                         )}
-                                        <button onClick={() => setCurrentUser(null)} className="flex items-center gap-2 bg-black text-white px-4 py-2 rounded hover:bg-gray-800 transition-colors">
+                                        <button onClick={() => auth.signOut()} className="flex items-center gap-2 bg-black text-white px-4 py-2 rounded hover:bg-gray-800 transition-colors">
                                             <Icons.LogOut /> Çıkış
                                         </button>
                                     </>
@@ -288,6 +328,9 @@
 
                     <main className="max-w-6xl mx-auto px-4 py-12">
                         <h2 className="text-3xl text-black mb-8 text-center">Gönderiler</h2>
+                        {posts.filter(p => p.showInFeed).length === 0 && (
+                            <p className="text-center text-gray-500 text-xl">Henüz gönderi yok. İlk gönderiyi siz ekleyin!</p>
+                        )}
                         <div className="space-y-6">
                             {posts.filter(p => p.showInFeed).map(post => (
                                 <div key={post.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
@@ -298,10 +341,10 @@
                                                 <h3 className="text-2xl text-black mb-2">{post.title}</h3>
                                                 <p className="text-gray-600 mb-2 line-clamp-2">{post.content}</p>
                                                 <div className="flex items-center gap-4 text-sm text-gray-500">
-                                                    <span className="flex items-center gap-1"><Icons.Heart filled={false} /> {post.likes.length}</span>
-                                                    <span className="flex items-center gap-1"><Icons.MessageCircle /> {post.comments.length}</span>
-                                                    <span className="flex items-center gap-1"><Icons.Eye /> {post.views}</span>
-                                                    <span>{post.date}</span>
+                                                    <span className="flex items-center gap-1"><Icons.Heart filled={false} /> {(post.likes || []).length}</span>
+                                                    <span className="flex items-center gap-1"><Icons.MessageCircle /> {(post.comments || []).length}</span>
+                                                    <span className="flex items-center gap-1"><Icons.Eye /> {post.views || 0}</span>
+                                                    <span>@{post.authorName}</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -315,10 +358,10 @@
                                                     <p className="text-gray-700 mb-6">{post.content}</p>
                                                     <div className="flex items-center gap-4 mb-4 pb-4 border-b border-gray-200">
                                                         <button onClick={(e) => { e.stopPropagation(); handleLike(post.id); }} className="flex items-center gap-1 text-gray-700 hover:text-red-500 transition-colors">
-                                                            <Icons.Heart filled={currentUser && post.likes.includes(currentUser.id)} /> <span>{post.likes.length}</span>
+                                                            <Icons.Heart filled={currentUser && (post.likes || []).includes(currentUser.uid)} /> <span>{(post.likes || []).length}</span>
                                                         </button>
-                                                        <span className="flex items-center gap-1 text-gray-700"><Icons.MessageCircle /> <span>{post.comments.length}</span></span>
-                                                        <span className="flex items-center gap-1 text-gray-700"><Icons.Eye /> <span>{post.views}</span></span>
+                                                        <span className="flex items-center gap-1 text-gray-700"><Icons.MessageCircle /> <span>{(post.comments || []).length}</span></span>
+                                                        <span className="flex items-center gap-1 text-gray-700"><Icons.Eye /> <span>{post.views || 0}</span></span>
                                                         <button onClick={(e) => { e.stopPropagation(); handleShare(post); }} className="flex items-center gap-1 text-gray-700 hover:text-green-500 transition-colors ml-auto">
                                                             <Icons.Share2 />
                                                         </button>
@@ -336,9 +379,9 @@
                                                 </div>
 
                                                 <div>
-                                                    <h4 className="text-xl text-black mb-4">Yorumlar ({post.comments.length})</h4>
+                                                    <h4 className="text-xl text-black mb-4">Yorumlar ({(post.comments || []).length})</h4>
                                                     <div className="space-y-3 mb-4 max-h-96 overflow-y-auto">
-                                                        {post.comments.map(comment => (
+                                                        {(post.comments || []).map(comment => (
                                                             <div key={comment.id} className="bg-gray-50 p-3 rounded">
                                                                 <div className="flex items-start justify-between mb-1">
                                                                     <span className="font-bold text-black">{comment.username}</span>
@@ -384,11 +427,12 @@
                                 </div>
                                 {authError && <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">{authError}</div>}
                                 <div className="space-y-4">
-                                    <input type="text" value={authForm.username} onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })} placeholder="Kullanıcı Adı" className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black" />
-                                    {authMode === 'register' && <input type="email" value={authForm.email} onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })} placeholder="E-posta" className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black" />}
-                                    <input type="password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} onKeyPress={(e) => e.key === 'Enter' && handleAuth()} placeholder="Şifre" className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black" />
+                                    {authMode === 'register' && <input type="text" value={authForm.username} onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })} placeholder="Kullanıcı Adı" className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black" />}
+                                    <input type="email" value={authForm.email} onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })} placeholder="E-posta" className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black" />
+                                    <input type="password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} onKeyPress={(e) => e.key === 'Enter' && handleAuth()} placeholder="Şifre (min 6 karakter)" className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-black" />
                                     <button onClick={handleAuth} className="w-full bg-black text-white py-3 rounded hover:bg-gray-800 transition-colors">{authMode === 'login' ? 'Giriş Yap' : 'Kayıt Ol'}</button>
                                     <button onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setAuthError(''); }} className="w-full text-gray-600 hover:text-black transition-colors">{authMode === 'login' ? 'Hesabın yok mu? Kayıt ol' : 'Zaten hesabın var mı? Giriş yap'}</button>
+                                    {authMode === 'login' && <p className="text-sm text-gray-500 text-center">Admin: admin@blog.com / 123456</p>}
                                 </div>
                             </div>
                         </div>
